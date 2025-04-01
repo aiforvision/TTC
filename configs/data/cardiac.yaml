@@ -1,0 +1,9 @@
+data_module:
+  _target_: data.data_module.CardiacDataModule
+  _partial_: true
+  _args_:
+    - "${oc.env:CARDIAC_DATA_PATH}"
+  num_workers: 32
+  batch_size: ${batch_size}
+  seed: ${seed}
+  minority_class: "cad_broad"

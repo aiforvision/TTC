@@ -1,0 +1,4 @@
+online_cluster:
+  _target_: models.loss.pseudo_labels.PseudoLabelCallback
+  every_n_epochs: 10
+  k_clusters: 2

@@ -1,0 +1,9 @@
+# @package _global_
+
+tags: ["bee_vs_wasp"]
+class_ratios: [0.5, 0.5]
+
+classes: ["Animalia_Arthropoda_Insecta_Hymenoptera_Apidae",
+        "Animalia_Arthropoda_Insecta_Hymenoptera_Vespidae"]
+
+

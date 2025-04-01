@@ -1,0 +1,9 @@
+# @package _global_
+
+tags: ["mammals"]
+class_ratios: [0.5, 0.5]
+
+classes: ["Animalia_Chordata_Mammalia_Artiodactyla",
+        "Animalia_Chordata_Mammalia_Carnivora"]
+
+

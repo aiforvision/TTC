@@ -1,0 +1,8 @@
+data_module:
+  _target_: data.data_module.MedMNISTDataModule
+  _partial_: true
+  _args_:
+    - ""
+  num_workers: 18
+  batch_size: ${batch_size}
+  seed: ${seed}

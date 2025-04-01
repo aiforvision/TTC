@@ -1,0 +1,11 @@
+
+# finetune.yaml
+_target_: models.baseline.SupervisedImageClassifier
+
+num_classes: 2
+max_epochs: ${trainer.max_epochs}
+lr: 1e-4
+dropout: 0.0
+weight_decay: 0
+warmup_epochs: 0
+optimizer_name: adam

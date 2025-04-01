@@ -1,0 +1,37 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - _self_
+  - override /module: model/contrastive_prototype
+  - override /callbacks:
+      - learning_rate_monitor
+      - online_eval
+      - checkpoint/pretrain
+#      - online_cluster
+  
+
+test: False
+
+val_transform:
+  _target_: data.augmentation.ThreeCropTransform
+  _args_:
+    - _target_: data.augmentation.CardiacTrainTransform
+      img_height: 128
+  online_transform: 
+    _target_: data.augmentation.SimCLRValTransformCard
+    img_height: 128
+  input_height: 128
+train_transform:
+  _target_: data.augmentation.ThreeCropTransform
+  _args_:
+    - _target_: data.augmentation.CardiacTrainTransform
+      img_height: 128
+  online_transform: 
+    _target_: data.augmentation.SimCLRValTransformCard
+    img_height: 128
+  input_height: 128
+
+

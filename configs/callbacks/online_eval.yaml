@@ -1,0 +1,6 @@
+online_eval:
+  _target_: bolts.ssl_online.SSLOnlineEvaluator
+  drop_p: 0.0
+  hidden_dim: null
+  z_dim: 2048
+  num_classes: ${len:${classes}}

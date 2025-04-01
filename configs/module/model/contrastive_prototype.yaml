@@ -1,0 +1,17 @@
+
+
+# contrastive.yaml
+_target_: models.sup_cont.ContrastiveResNet50Prototypes
+
+max_epochs: ${trainer.max_epochs}
+output_dim: 128
+lr: 0.0625
+batch_norm: False
+temperature: 0.07
+supervised: True
+warmup_epochs: 10
+optimizer_name: sgd
+batch_size: ${batch_size}
+pull_mode: "pull_to_pr_and_other_to_eps"
+eps_0: 1.0 
+eps_1: 1.0

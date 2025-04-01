@@ -1,0 +1,18 @@
+# Core dependencies 
+torch>=2.0.0
+torchvision>=0.15.0
+lightning>=2.0.0
+hydra-core>=1.3.2
+timm>=0.9.0
+numpy>=1.24.0
+tqdm>=4.66.0
+matplotlib>=3.7.0
+wandb>=0.15.0  # For experiment tracking
+scikit-learn>=1.3.0
+pillow>=10.0.0
+torchmetrics>=1.0.0
+omegaconf>=2.3.0
+
+# Optional dependencies for analysis
+pandas>=2.0.0
+seaborn>=0.12.0

@@ -1,0 +1,4 @@
+defaults:
+  - checkpoint: pretrain
+  - learning_rate_monitor
+  - _self_

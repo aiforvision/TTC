@@ -1,0 +1,29 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - _self_
+  - override /module: model/finetune
+  - override /data: cardiac
+  - override /callbacks:
+      - learning_rate_monitor
+      - checkpoint/finetune
+  
+
+test: True
+
+
+
+val_transform:
+  _target_: data.augmentation.SimCLRValTransformCard
+  img_height: 128
+train_transform:
+  _target_: data.augmentation.CardiacTrainTransform
+  img_height: 128
+test_transform:
+  _target_: data.augmentation.SimCLRValTransformCard
+  img_height: 128
+
+batch_size: 1024

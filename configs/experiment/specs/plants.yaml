@@ -1,0 +1,9 @@
+# @package _global_
+
+tags: ["oak_plant"]
+class_ratios: [0.5, 0.5]
+
+classes: ["Plantae_Tracheophyta_Magnoliopsida_Fagales_Fagaceae_Quercus",
+        "Plantae_Tracheophyta_Magnoliopsida_Saxifragales"]
+
+

@@ -1,0 +1,31 @@
+# @package _global_
+
+# to execute this experiment run:
+# python train.py experiment=example
+
+defaults:
+  - _self_
+  - override /module: model/finetune
+  - override /callbacks:
+      - learning_rate_monitor
+      - checkpoint/finetune
+  
+
+test: True
+
+normalize: ${load_normalize_from_file:null,${classes},${class_ratios}}
+
+val_transform:
+  _target_: data.augmentation.SimCLRValTransform
+  img_height: 224
+  normalize: ${normalize}
+train_transform:
+  _target_: data.augmentation.SimCLRTrainTransform
+  img_height: 224
+  normalize: ${normalize}
+test_transform:
+  _target_: data.augmentation.SimCLRValTransform
+  img_height: 224
+  normalize: ${normalize}
+
+batch_size: 1024

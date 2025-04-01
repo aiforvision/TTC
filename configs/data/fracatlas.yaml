@@ -1,0 +1,10 @@
+data_module:
+  _target_: data.data_module.SimpleImageDataModule
+  _partial_: true
+  train_dir: 
+  val_dir: 
+  test_dir: 
+  num_workers: 32
+  batch_size: ${batch_size}
+  persistent_workers: False
+  in_memory: False
