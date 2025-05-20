@@ -42,7 +42,14 @@ class SupConLoss(LightningModule):
             contrast_mode: Mode for contrasting ("ALL_VIEWS" uses all views as anchors)
             base_temperature: Base temperature for scaling
             min_class: Minority class index (0 or 1)
-            ratio_supervised_majority: Ratio of majority class samples to remove from loss. 1.0 is no supervision
+            ratio_supervised_majority (float, optional): Fraction of majority class positive pairs to *include* 
+            for supervision. Defaults to -1.0.
+            - Values range from 0.0 (no majority-majority positive pairs) to 1.0 (all
+              majority-majority pairs are considered positive).
+            - A value of -1.0 (default) results in standard supervised contrastive
+              loss, where all same-class pairs (including all majority-majority)
+              are considered positive.
+            - This parameter is active only if labels are provided and its value is >= 0.0.
             weighting_positives: Weight for positive samples
             reweight_global_min_loss: Weight for global minority loss reweighting
         """
@@ -102,7 +109,7 @@ class SupConLoss(LightningModule):
         if labels is None:
             # SimCLR unsupervised loss
             mask = mask_unsup
-        elif self.ratio_supervised_majority > 0.0:
+        elif 0.0 <= self.ratio_supervised_majority < 1.0:
             labels = labels.contiguous().view(-1, 1) if labels is not None else None
 
             # Ensure labels dimensions match expected shapes
@@ -227,10 +234,13 @@ class SupConLoss(LightningModule):
         and a controlled ratio of majority class samples.
         
         Args:
-            labels: Class labels for each sample
-            ratio: Ratio of supervised samples in the majority class
-            minority_class: Index of the minority class
-            majority_class: Index of the majority class
+            labels: Class labels for each sample.
+            ratio: Fraction of majority class samples whose positive pairs (with other majority
+                   class samples) should be included in the mask. Must be between 0.0 and 1.0.
+                   0.0 means no majority-majority positive pairs.
+                   1.0 means all potential majority-majority positive pairs are included.
+            minority_class: Index of the minority class.
+            majority_class: Index of the majority class.
             
         Returns:
             Mask for numerator and effective ratio
@@ -735,14 +745,21 @@ class SupConLossDDP(nn.Module):
     This implementation is optimized for distributed training and includes special handling
     for imbalanced binary classification with mechanisms to address class imbalance.
     
-    Args:
-        temperature: Temperature scaling parameter for the logits
-        contrast_mode: Mode for contrasting ("ALL_VIEWS" uses all views as anchors)
-        base_temperature: Base temperature for scaling
-        min_class: Minority class index (0 or 1)
-        ratio_supervised_majority: Ratio of majority class positives contributing to samples loss
-        weighting_positives: Weight for positive samples
-        reweight_global_min_loss: Weight for global minority loss reweighting
+     Args:
+        temperature (float): Temperature scaling parameter for the logits.
+        contrast_mode (str): Mode for contrasting ("ALL_VIEWS" uses all views as anchors).
+        base_temperature (float): Base temperature for scaling.
+        min_class (Optional[int]): Minority class index (0 or 1).
+        ratio_supervised_majority (float, optional): Fraction of majority class positive pairs to include
+            for supervision. Defaults to -1.0.
+            - Values range from 0.0 (no majority-majority positive pairs) to 1.0 (all
+              majority-majority pairs are considered positive).
+            - A value of -1.0 (default) results in standard supervised contrastive
+              loss, where all same-class pairs (including all majority-majority)
+              are considered positive.
+            - This parameter is active only if labels are provided and its value is >= 0.0.
+        weighting_positives (float): Weight for positive samples. (Currently not implemented in loss calculation)
+        reweight_global_min_loss (float): Weight for global minority loss reweighting. (Currently not implemented in loss calculation)
     """
 
     def __init__(
@@ -818,7 +835,7 @@ class SupConLossDDP(nn.Module):
         if labels is None:
             # SimCLR unsupervised loss
             mask = mask_unsup
-        elif self.ratio_supervised_majority > 0.0:
+        elif 0.0 <= self.ratio_supervised_majority < 1.0:
             # Format labels as a column vector
             if not isinstance(labels, torch.Tensor):
                 labels = torch.tensor(labels, dtype=torch.float32).to(device)
@@ -955,11 +972,13 @@ class SupConLossDDP(nn.Module):
         and a controlled ratio of majority class samples.
         
         Args:
-            labels: Class labels for each sample
-            ratio: Ratio of majority class samples to remove (1.0 - ratio are kept)
-            minority_class: Index of the minority class
-            majority_class: Index of the majority class
-            device: Device to place tensors on
+            labels: Class labels for each sample.
+            ratio: Fraction of majority class samples whose positive pairs (with other majority
+                   class samples) should be included in the mask. Must be between 0.0 and 1.0.
+                   0.0 means no majority-majority positive pairs.
+                   1.0 means all potential majority-majority positive pairs are included.
+            minority_class: Index of the minority class.
+            majority_class: Index of the majority class.
             
         Returns:
             Tuple of (mask, effective_ratio)
