@@ -29,13 +29,11 @@ class ContrastiveResNet50(LightningModule):
         warmup_epochs: int = 0,
         optimizer_name: str = 'adam',
         batch_size: int = 128,
-        calc_cosine_sim: bool = False,
         min_class=0,
         image_net_init: bool = False,
         base_temperature=0.07,
         additional_ckpt_at=[],
         model_name: str = 'resnet50',
-        number_of_prototypes=None,
         find_prototypes_optimized=False,
         ratio_supervised_majority=-1,
         **kwargs
@@ -52,9 +50,7 @@ class ContrastiveResNet50(LightningModule):
         self.warmup_epochs = warmup_epochs
         self.optim_choice = optimizer_name
         self.batch_size = batch_size
-        self.calc_cosine_sim = calc_cosine_sim
         self.min_class = min_class
-        self.number_of_prototypes = number_of_prototypes
         self.find_prototypes_optimized = find_prototypes_optimized
         self.additional_ckpt_at = additional_ckpt_at
         self.model_name = model_name
@@ -65,11 +61,8 @@ class ContrastiveResNet50(LightningModule):
         self.save_hyperparameters()
 
         # Prepare base encoder
-        if model_name.startswith('vit'):
-            # Use timm to create ViT models
-            self.base_encoder = timm.create_model(model_name, pretrained=image_net_init)
-            self.num_ftrs = self.base_encoder.embed_dim
-        elif model_name == 'resnet50':
+
+        if model_name == 'resnet50':
             if image_net_init:
                 self.base_encoder = resnet50(weights=ResNet50_Weights.DEFAULT)
             else:
@@ -103,52 +96,16 @@ class ContrastiveResNet50(LightningModule):
                                     min_class=self.min_class,
                                     ratio_supervised_majority=ratio_supervised_majority)
 
-        # Metrics
-        self.top5_acc_train = torchmetrics.Accuracy(
-            task='multiclass', top_k=5, num_classes=2*batch_size-1)
-        self.top1_acc_train = torchmetrics.Accuracy(
-            task='multiclass', top_k=1, num_classes=2*batch_size-1)
-
-        self.top5_acc_val = torchmetrics.Accuracy(
-            task='multiclass', top_k=5, num_classes=2*batch_size-1)
-        self.top1_acc_val = torchmetrics.Accuracy(
-            task='multiclass', top_k=1, num_classes=2*batch_size-1)
-
-        if self.calc_cosine_sim:
-            self.s_0_0_metric_train = MeanMetric()
-            self.s_1_1_metric_train = MeanMetric()
-            self.s_0_1_metric_train = MeanMetric()
-
-            self.s_0_0_metric_val = MeanMetric()
-            self.s_1_1_metric_val = MeanMetric()
-            self.s_0_1_metric_val = MeanMetric()
+ 
 
     def forward(self, x) -> tuple[torch.Tensor, torch.Tensor]:
-        if self.model_name.startswith('vit'):
-            encoding = self.base_encoder.forward_features(x)
-            encoding = self.base_encoder.pool(encoding)
-        else:
-            encoding = self.base_encoder(x)
+        encoding = self.base_encoder(x)
         encoding = encoding.view(encoding.size(0), -1)  # Flatten the output
         projection = self.projection_head(encoding)
         projection = F.normalize(projection, dim=1)
 
         return encoding, projection
 
-    def _cosine_sim(self, embeddings: torch.Tensor, labels: torch.Tensor) -> tuple[float, float, float]:
-        sim_matrix = pairwise_cosine_similarity(embeddings).detach()
-        mask_0 = labels == 0
-        mask_1 = labels == 1
-        if mask_0.sum() == 0 or mask_1.sum() == 0:
-            print("No samples of one class in batch")
-        s_0_0 = sim_matrix[mask_0][:, mask_0]
-        s_1_1 = sim_matrix[mask_1][:, mask_1]
-        s_0_1 = sim_matrix[mask_0][:, mask_1]
-        s_0_0_mean = s_0_0.mean(dim=1).mean()
-        s_0_1_mean = s_0_1.mean(dim=1).mean()
-        s_1_1_mean = s_1_1.mean(dim=1).mean()
-
-        return s_0_0_mean.item(), s_0_1_mean.item(), s_1_1_mean.item()
 
     def training_step(self, batch, batch_idx) -> torch.Tensor:
         images, labels = batch
@@ -157,25 +114,7 @@ class ContrastiveResNet50(LightningModule):
         images = torch.cat(images[:-1], dim=0)
         embeddings, projection = self.forward(images)
         len_images = len(images)
-        del images
-
-        if self.calc_cosine_sim:
-            s_0_0, s_0_1, s_1_1 = self._cosine_sim(projection,
-                                                   torch.cat([labels]*nviews, dim=0).detach().cpu())
-            try:
-                self.s_0_0_metric_train.update(s_0_0)
-                self.s_1_1_metric_train.update(s_1_1)
-                self.s_0_1_metric_train.update(s_0_1)
-            except RuntimeWarning:
-                print("RuntimeWarning")
-            self.log(f"s_0_0_metric.train", self.s_0_0_metric_train, on_epoch=True, on_step=False)
-            self.log(f"s_0_1_metric.train", self.s_0_1_metric_train, on_epoch=True, on_step=False)
-            self.log(f"s_1_1_metric.train", self.s_1_1_metric_train, on_epoch=True, on_step=False)
-
-        del embeddings
-
         f1, f2 = torch.split(projection, [labels.shape[0], labels.shape[0]], dim=0)
-        projection = projection.detach()
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
 
         torch.cuda.empty_cache()
@@ -191,11 +130,7 @@ class ContrastiveResNet50(LightningModule):
             self.log('train.loss_maj', loss_maj.item())
         self.log('train.loss', loss.item())
 
-        if len_images == 2 * self.batch_size:
-            self.top1_acc_train(logits, batch_labels)
-            self.top5_acc_train(logits, batch_labels)
-        self.log(f"top1.train", self.top1_acc_train, on_epoch=True, on_step=False)
-        self.log(f"top5.train", self.top5_acc_train, on_epoch=True, on_step=False)
+   
 
         return loss
 
@@ -203,7 +138,6 @@ class ContrastiveResNet50(LightningModule):
         images, labels = batch
         images = torch.cat(images[:-1], dim=0)
         embeddings, projection = self.forward(images)
-        embeddings = embeddings.detach().cpu()
 
         f1, f2 = torch.split(projection, [labels.shape[0], labels.shape[0]], dim=0)
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
@@ -223,24 +157,8 @@ class ContrastiveResNet50(LightningModule):
             self.log('val.loss_maj', loss_maj)
         self.log('val.loss', loss)
 
-        if len(images) == 2 * self.batch_size:
-            self.top1_acc_val(logits, batch_labels)
-            self.top5_acc_val(logits, batch_labels)
-            self.log(f"top1.val", self.top1_acc_val, on_epoch=True, on_step=False)
-            self.log(f"top5.val", self.top5_acc_val, on_epoch=True, on_step=False)
 
-        if self.calc_cosine_sim:
-            s_0_0, s_0_1, s_1_1 = self._cosine_sim(projection,
-                                                   torch.cat([labels]*2, dim=0).detach().cpu())
-            try:
-                self.s_0_0_metric_val.update(s_0_0)
-                self.s_1_1_metric_val.update(s_1_1)
-                self.s_0_1_metric_val.update(s_0_1)
-            except RuntimeWarning:
-                print("RuntimeWarning")
-            self.log(f"s_0_0_metric.val", self.s_0_0_metric_val, on_epoch=True, on_step=False)
-            self.log(f"s_0_1_metric.val", self.s_0_1_metric_val, on_epoch=True, on_step=False)
-            self.log(f"s_1_1_metric.val", self.s_1_1_metric_val, on_epoch=True, on_step=False)
+     
 
     def configure_optimizers(self):
         lr_decay_rate = 0.1
@@ -345,8 +263,6 @@ class ContrastiveResNet50Prototypes(ContrastiveResNet50):
         )
 
         self._set_prototypes(simulate_prototypes=True)
-
-        self.support_label_acc = torchmetrics.Accuracy(num_classes=2, task="multiclass", top_k=1)
         self.inverse_prototypes = inverse_prototypes
 
     def on_training_start(self):
@@ -415,26 +331,14 @@ class ContrastiveResNet50Prototypes(ContrastiveResNet50):
         images = torch.cat(images[:n_contrastive_views], dim=0)
         _, projection = self.forward(images)
 
-        del images
-        torch.cuda.empty_cache()
 
-        if self.calc_cosine_sim:
-            s_0_0, s_0_1, s_1_1 = self._cosine_sim(projection,
-                                                   torch.cat([labels]*n_contrastive_views, dim=0).detach().cpu())
-            self.log(f"s_0_0_metric.train", s_0_0,
-                     on_epoch=True, on_step=False)
-            self.log(f"s_0_1_metric.train", s_0_1,
-                     on_epoch=True, on_step=False)
-            self.log(f"s_1_1_metric.train", s_1_1,
-                     on_epoch=True, on_step=False)
-
+  
         f1, f2 = torch.split(
             projection, [labels.shape[0], labels.shape[0]], dim=0)
 
         # bsz, nviews, pdim
         features = torch.cat([f1.unsqueeze(1), f2.unsqueeze(1)], dim=1)
 
-        torch.cuda.empty_cache()
    
         loss, logits, batch_labels = self.critereon(
                 features, support_labels)
@@ -452,10 +356,6 @@ class ContrastiveResNet50Prototypes(ContrastiveResNet50):
             self.top1_acc_train(logits, batch_labels)
             self.top5_acc_train(logits, batch_labels)
 
-        self.log(f"top1.train", self.top1_acc_train,
-                 on_epoch=True, on_step=False)
-        self.log(f"top5.train", self.top5_acc_train,
-                 on_epoch=True, on_step=False)
 
         return loss
 
@@ -491,78 +391,5 @@ class ContrastiveResNet50Prototypes(ContrastiveResNet50):
         if hasattr(self, 'prototype_1') and hasattr(self, 'prototype_2'):
             self._log_distance_to_prototypes(projection, labels, split="val")
 
-        if self.calc_cosine_sim:
-            s_0_0, s_0_1, s_1_1 = self._cosine_sim(projection,
-                                                   torch.cat([labels]*n_contrastive_views, dim=0).detach().cpu())
 
-            self.log(f"s_0_0_metric.val", s_0_0,
-                     on_epoch=True, on_step=False)
-            self.log(f"s_0_1_metric.val", s_0_1,
-                     on_epoch=True, on_step=False)
-            self.log(f"s_1_1_metric.val", s_1_1,
-                     on_epoch=True, on_step=False)
-
-        if len_images == 2 * self.batch_size:
-            self.top1_acc_val(logits, batch_labels)
-            self.top5_acc_val(logits, batch_labels)
-
-        self.log(f"top1.val", self.top1_acc_val,
-                 on_epoch=True, on_step=False)
-        self.log(f"top5.val", self.top5_acc_val,
-                 on_epoch=True, on_step=False)
-
-
-class ContrastiveViTPrototypes(ContrastiveResNet50Prototypes):
-    def __init__(self,
-                 model_name: str = 'vit_base_patch16_224',
-                 *args, **kwargs):
-        super().__init__(model_name=model_name, *args, **kwargs)
-
-        self.num_ftrs = self.base_encoder.embed_dim
-
-        self.projection_head = nn.Sequential(
-            nn.Linear(self.num_ftrs, self.num_ftrs, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Linear(self.num_ftrs, self.output_dim, bias=True),
-        )
-
-    def forward(self, x) -> tuple[torch.Tensor, torch.Tensor]:
-        encoding = self.base_encoder.forward_features(x)
-        encoding = self.base_encoder.pool(encoding)
-        encoding = encoding.view(encoding.size(0), -1)  # Flatten the output
-        projection = self.projection_head(encoding)
-        projection = F.normalize(projection, dim=1)
-
-        return encoding, projection
-
-
-class ContrastiveViT(ContrastiveResNet50):
-    def __init__(self, use_weight_decay_scheduler: bool = False, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.use_weight_decay_scheduler = use_weight_decay_scheduler
-
-        if self.hparams.batch_norm:
-            self.projection_head = nn.Sequential(
-                nn.Linear(self.num_ftrs, self.num_ftrs, bias=False),
-                nn.BatchNorm1d(self.num_ftrs),
-                nn.ReLU(inplace=True),
-                nn.Linear(self.num_ftrs, self.output_dim, bias=False),
-                nn.BatchNorm1d(self.output_dim),
-            )
-        else:
-            self.projection_head = nn.Sequential(
-                nn.Linear(self.num_ftrs, self.num_ftrs, bias=True),
-                nn.ReLU(inplace=True),
-                nn.Linear(self.num_ftrs, self.output_dim, bias=True),
-            )
-
-    def forward(self, x) -> tuple[torch.Tensor, torch.Tensor]:
-        encoding = self.base_encoder.forward_features(x)
-        encoding = self.base_encoder.pool(encoding)
-        encoding = encoding.view(encoding.size(0), -1)  # Flatten the output
-        projection = self.projection_head(encoding)
-        projection = F.normalize(projection, dim=1)
-
-        return encoding, projection
 
